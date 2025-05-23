@@ -11,6 +11,7 @@ from collections import defaultdict
 from common import label as labelm
 from common import logger
 from crawl import artifactgenctx
+from crawl import buildpom
 from crawl import dependency
 from crawl import bazel
 from crawl import pomparser
@@ -72,8 +73,8 @@ class Crawler:
         self.package_to_artifact = {} # bazel package -> artifact def instance
         self.library_to_artifact = defaultdict(list) # library root path -> list of its artifact def instances
         self.library_to_nodes = defaultdict(list) # library root path -> list of its DAG Node instances
-        self.target_to_node = {} # bazel target -> Node for that target
-        self.target_to_dependencies = {} # bazel_target -> target's deps
+        self.target_to_node = {} # label.Label -> Node for that target
+        self.target_to_dependencies = {} # label.Label -> target's deps
 
         self.genctxs = [] # ArtifactGenerationContext instances
         self.leafnodes = [] # all leafnodes discovered while crawling
@@ -181,11 +182,9 @@ class Crawler:
         - the transitive closure of the library's dependencies
         """
         for ctx in self.genctxs:
-            target_key = self._get_target_key(
-                ctx.artifact_def.bazel_package, ctx.label)
-            directs = self.target_to_dependencies[target_key]
+            directs = self.target_to_dependencies[ctx.label]
             ctx.register_artifact_directs(directs)
-            transitive_closure = target_to_transitive_closure_deps[target_key]
+            transitive_closure = target_to_transitive_closure_deps[ctx.label]
             ctx.register_artifact_transitive_closure(transitive_closure)
             lib_transitive_closure = self\
                 ._get_deps_transitive_closure_for_library(
@@ -199,8 +198,7 @@ class Crawler:
 
         nodes = self.library_to_nodes[library_path]
         for n in nodes:
-            target_key = self._get_target_key(n.artifact_def.bazel_package, n.label)
-            all_deps.update(target_to_transitive_closure_deps[target_key])
+            all_deps.update(target_to_transitive_closure_deps[n.label])
 
         # also include every artifact that is part of this library
         # (we have already collected them above if they all reference each
@@ -294,9 +292,7 @@ class Crawler:
         accumulated_deps: a list of deps, each node's deps are added to to it
         target_to_all_dependencies: the result dictionary being built
         """
-        package = node.artifact_def.bazel_package
-        target_key = self._get_target_key(package, node.label)
-        this_node_deps = self.target_to_dependencies[target_key]
+        this_node_deps = self.target_to_dependencies[node.label]
 
         processed_deps = set() # to remove duplicate deps
 
@@ -327,14 +323,14 @@ class Crawler:
         # 2) previous transitive closure computation
         # 3) accumulated deps from child
 
-        this_node_current_transitives = target_to_all_dependencies.get(target_key, ())
+        this_node_current_transitives = target_to_all_dependencies.get(node.label, ())
         this_node_all_deps += [d for d in this_node_current_transitives if d not in processed_deps]
         processed_deps.update(this_node_all_deps)
 
         this_node_all_deps += [d for d in accumulated_deps if d not in processed_deps]
         processed_deps.update(this_node_all_deps)
 
-        target_to_all_dependencies[target_key] = this_node_all_deps
+        target_to_all_dependencies[node.label] = this_node_all_deps
 
         for parent in node.parents:
             accumulated_deps = this_node_all_deps + [d for d in accumulated_deps if d not in processed_deps]
@@ -358,14 +354,13 @@ class Crawler:
     def _push_transitives_and_walk(self, node, collected_dep_lists, 
                                    processed_nodes):
         package = node.artifact_def.bazel_package
-        target_key = self._get_target_key(package, node.label)
-        deps = self.target_to_dependencies[target_key]
+        deps = self.target_to_dependencies[node.label]
         if node.artifact_def.pom_generation_mode.produces_artifact:
             if len(collected_dep_lists) > 0:
-                deps = self.target_to_dependencies[target_key]
+                deps = self.target_to_dependencies[node.label]
                 collected_dep_lists.append(deps)
                 deps = self._process_collected_dep_lists(collected_dep_lists)
-                self.target_to_dependencies[target_key] = deps
+                self.target_to_dependencies[node.label] = deps
                 collected_dep_lists = []
         else:
             if node not in processed_nodes:
@@ -484,34 +479,43 @@ class Crawler:
         """
         nodes = []
         for package in packages:
-            n = self._crawl(package, label=None, parent_node=None, 
-                            follow_references=follow_references)
-            nodes.append(n)
+            parent_node = None
+            label = labelm.Label(package)
+            node = self._crawl(label, parent_node, follow_references)
+            nodes.append(node)
         return nodes
 
-    # TODO combine package and label
-    def _crawl(self, package, label, parent_node, follow_references):
+    def _crawl(self, label, parent_node, follow_references):
         """
-        For the specified package, crawl BUILD file dependencies, unless
-        follow_references is False.
+        Loads and processes the dependencies of the given label. For each source
+        reference, calls this method recursively, unless follow_references is
+        False.
 
-        The given label instance is the label pointing at this package.
+        Args:
+            label:
+                label.Label instance
+            parent_node:
+                The downstream that references this package, crawler.Node
+            follow_references:
+                Bool
 
         Returns a Node instance for the crawled package.
         """
-        artifact_def = self.workspace.parse_maven_artifact_def(package)
+        assert isinstance(label, labelm.Label)
+        artifact_def = self.workspace.parse_maven_artifact_def(label.package_path)
+        
+        label = Crawler._merge(label, artifact_def)
         if artifact_def is None:
-            raise Exception("No artifact defined at package %s" % package)
-        target_key = self._get_target_key(package, label, artifact_def)
-        if target_key in self.target_to_node:
+            raise Exception("No artifact defined at package %s" % label)
+        if label in self.target_to_node:
             # if we have already processed this target, we can re-use the
             # children we discovered previously
             # for example: A -> B -> C is how we found B, and now we got here
             # through another path: A -> Z -> B -> C
             # the parent is different, but the children have to be the same
-            cached_node = self.target_to_node[target_key]
+            cached_node = self.target_to_node[label]
             if self.verbose:
-                logger.debug("Skipping re-crawling of artifact [%s] with target key [%s]" % (cached_node.artifact_def, target_key))
+                logger.debug("Skipping re-crawling of artifact [%s] with target key [%s]" % (cached_node.artifact_def, label))
             # also add the new parent to the cached_node - this is important
             # because we have logic that traverses the nodes from children to
             # parent nodes
@@ -523,44 +527,37 @@ class Crawler:
             return cached_node
         else:
             if self.verbose:
-                logger.info("Processing [%s]" % target_key)
+                logger.info("Processing [%s]" % label)
             
-            self.package_to_artifact[package] = artifact_def
+            self.package_to_artifact[label.package_path] = artifact_def
             self.library_to_artifact[artifact_def.library_path].append(artifact_def)
-            if label is None:
-                # make a real label instance here
-                # this is a bootstrapping problem: the root
-                # artifacts (that we start with) have nothing pointing at them
-                # (but this can be initialized earlier)
-                label = labelm.Label("%s:%s" % (package, artifact_def.bazel_target))
+
             artifactctx = artifactgenctx.ArtifactGenerationContext(
                 self.workspace, self.pom_template, artifact_def, label)
             self.genctxs.append(artifactctx)
             labels = self._discover_dependencies(artifact_def, label)
             
             # TODO abstract this, as it assumes maven_install
-            all_deps = self.workspace.parse_dep_labels([lbl.name for lbl in labels])
-            self.target_to_dependencies[target_key] = all_deps
+            all_deps = self.workspace.parse_dep_labels([lbl.canonical_form for lbl in labels])
+            self.target_to_dependencies[label] = all_deps
 
             if self.verbose:
-                logger.debug("Determined labels for artifact: [%s] with target key [%s]" % (artifact_def, target_key))
+                logger.debug("Determined labels for artifact: [%s] with target key [%s]" % (artifact_def, label))
                 logger.debug("Labels: %s" % "\n".join([lbl.name for lbl in labels]))
                 logger.debug("Dependencies: %s" % "\n".join([str(d) for d in all_deps]))
             node = Node(parent_node, artifact_def, label)
             if follow_references:
-                # this is where we crawl is source label:
-                for label in labels:
-                    if label.is_source_ref:
-                        deps = self.workspace.parse_dep_labels([label.name])
+                # this is where we crawl the source label:
+                for lbl in labels:
+                    if lbl.is_source_ref:
+                        deps = self.workspace.parse_dep_labels([lbl.canonical_form])
                         if len(deps) == 0:
                             # there is some filtering we have to pull out of
                             # the parse method above
                             continue
-                        child_node = self._crawl(
-                            label.package_path, label, node, 
-                            follow_references)
+                        child_node = self._crawl(lbl, node, follow_references)
                         node.children.append(child_node)
-            self.target_to_node[target_key] = node
+            self.target_to_node[label] = node
             self.library_to_nodes[node.artifact_def.library_path].append(node)
             self._store_if_leafnode(node)
             return node
@@ -593,7 +590,7 @@ class Crawler:
             try:
                 labels = bazel.query_java_library_deps_attributes(
                     self.workspace.repo_root_path,
-                    label.name,
+                    label.canonical_form,
                     artifact_def.pom_generation_mode.dependency_attributes,
                     self.workspace.verbose)
                 labels = [labelm.Label(lbl) for lbl in labels]
@@ -626,16 +623,24 @@ class Crawler:
         return updated_labels
 
     @classmethod
-    def _get_target_key(clazz, package, label, artifact_def=None):
-        if label is None:
-            # initial bootstrap - we start a bazel package and we don't
-            # have a label pointing here
-            assert artifact_def is not None
-            target = artifact_def.bazel_target
+    def _merge(clazz, label, artifact_def):
+        assert isinstance(label, labelm.Label)
+        assert isinstance(artifact_def, buildpom.MavenArtifactDef)
+        pack_label = labelm.Label(label.package_path)
+        if pack_label.target == artifact_def.bazel_target:
+            # by default, the artifact def gets the default package target,
+            # so ok to override it (maybe it should just be None...?)
+            return label
         else:
-            target = label.target
-        assert target is not None, "Target is None for package %s" % package
-        return "%s:%s" % (package, target)
+            # the artifact def specifies a target that is not the package
+            # default
+            if label.is_default_target:
+                # the label uses the default, so ok to overwrite
+                return label.with_target(artifact_def.bazel_target)
+            else:
+                assert label.target == artifact_def.bazel_target, "conflicting target information: the artifact specifies [%s] but the current label is [%s]" % (artifact_def.bazel_target, label)
+                return label
+        raise AssertionError("we should not get here " + str(label))
 
     def _store_if_leafnode(self, node):
         if len(node.children) == 0:
