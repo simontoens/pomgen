@@ -10,9 +10,9 @@ class ArtifactGenerationContext:
         self._artifact_def = artifact_def
         self._label = label
 
-        self._direct_dependencies = []
-        self._artifact_transitive_closure = []
-        self._library_transitive_closure = []
+        self._direct_dependencies = None
+        self._artifact_transitive_closure = None
+        self._library_transitive_closure = None
 
         self._generator = crawl.pom.get_pom_generator(
             workspace, pom_template, artifact_def)
@@ -33,14 +33,17 @@ class ArtifactGenerationContext:
 
     @property
     def direct_dependencies(self):
+        assert self._direct_dependencies is not None
         return self._direct_dependencies
 
     @property
     def artifact_transitive_closure(self):
+        assert self._artifact_transitive_closure is not None
         return self._artifact_transitive_closure
 
     @property
     def library_transitive_closure(self):
+        assert self._library_transitive_closure is not None
         return self._library_transitive_closure
 
     @property

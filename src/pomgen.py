@@ -73,8 +73,7 @@ def main(args):
                     path = lib_paths[0]
                     _write_all_libraries_hint_files(result, output_dir, path)
 
-        # hardcoded to pom.xml files right here, but in the future pluggable?
-        pomgens = [ctx.generator for ctx in result.artifact_generation_contexts]
+        pomgens = [gen_strategy.new_generator(ctx) for ctx in result.artifact_generation_contexts]
 
         for pomgen in pomgens:
             pom_dest_dir = os.path.join(output_dir, pomgen.bazel_package)

@@ -1,4 +1,5 @@
 import crawl.dependency as dependency
+import crawl.pom as pom
 import generate
 
 
@@ -23,3 +24,6 @@ class PomGenerationStrategy(generate.AbstractGenerationStrategy):
     def load_transitive_closure(self, dependency):
         depmd = self.workspace.dependency_metadata
         return depmd.get_transitive_closure(dependency)
+
+    def _init_generator__hook(self, artifact_def):
+        return pom.get_pom_generator(self.workspace, self.pom_template, artifact_def)

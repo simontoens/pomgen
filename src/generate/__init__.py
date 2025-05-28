@@ -8,6 +8,16 @@ class AbstractDependency(ABC):
     pass
 
 
+class AbstractManifestGenerator(ABC):
+    """
+    TODO add dependencies related methods
+    """
+
+    @abstractmethod
+    def gen():
+        pass
+
+
 class AbstractGenerationStrategy(ABC):
 
     @abstractmethod
@@ -40,5 +50,24 @@ class AbstractGenerationStrategy(ABC):
 
         We could use bazel query to get the same information, but it is
         faster to parse the "pinned dependency file" once.
+        """
+        pass
+
+    def new_generator(self, ctx):
+        """
+        Configures and returns a new manifest generator.
+        """
+        gen = self._init_generator__hook(ctx.artifact_def)
+        gen.register_dependencies(ctx.direct_dependencies)
+        gen.register_dependencies_transitive_closure__artifact(ctx.artifact_transitive_closure)
+        gen.register_dependencies_transitive_closure__library(ctx.library_transitive_closure)
+        return gen
+        
+    @abstractmethod
+    def _init_generator__hook(self, artifact_def):
+        """
+        Returns a new AbstractManifestGenerator instance.
+
+        Hook method, only meant to be implementation in subclasses.
         """
         pass

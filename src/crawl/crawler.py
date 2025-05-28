@@ -11,9 +11,10 @@ from collections import defaultdict
 from common import label as labelm
 from common import logger
 from crawl import artifactgenctx
+from crawl import bazel
 from crawl import buildpom
 from crawl import dependency
-from crawl import bazel
+from crawl import pom
 from crawl import pomparser
 from crawl.releasereason import ReleaseReason
 import difflib
@@ -244,8 +245,9 @@ class Crawler:
         for ctx in self.genctxs:
             art_def = ctx.artifact_def
             if not art_def.requires_release and art_def.released_pom_content is not None:
-                # TODO pomparser
-                current_manifest = pomparser.format_for_comparison(ctx.gen_goldfile_manifest())
+                generator = self.generation_strategy.new_generator(ctx)
+                goldfile_manifest = generator.gen(pom.PomContentType.GOLDFILE)
+                current_manifest = pomparser.format_for_comparison(goldfile_manifest)
                 previous_manifest = pomparser.format_for_comparison(art_def.released_pom_content)
                 manifest_changed = current_manifest != previous_manifest
                 if manifest_changed:
@@ -534,9 +536,6 @@ class Crawler:
                 self.workspace, self.pom_template, artifact_def, label)
             self.genctxs.append(artifactctx)
             labels = self._discover_dependencies(artifact_def, label)
-            # TODO abstract this, as it assumes maven_install
-            #all_deps = self.workspace.parse_dep_labels([lbl.canonical_form for lbl in labels])
-            #self.target_to_dependencies[label] = all_deps
             source_labels, deps = self._partition_and_filter_labels(labels)
             if self.verbose:
                 logger.debug("Determined labels for artifact: [%s] with target key [%s]" % (artifact_def, label))
