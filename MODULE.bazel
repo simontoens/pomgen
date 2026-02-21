@@ -26,16 +26,16 @@ use_repo(pip, "examples_pip")
 # Maven dependencies
 maven = use_extension("@rules_jvm_external//:extensions.bzl", "maven")
 
-# regen lock file: REPIN=1 bazel run @mvn//:pin
+# regen lock file: REPIN=1 bazel run @poppy_mvn//:pin
 maven.install(
-    name = "mvn",
+    name = "poppy_mvn",
     artifacts = [
         "com.google.guava:guava:33.4.8-jre",
         "org.apache.commons:commons-lang3:3.18.0",
         "org.apache.commons:commons-math3:3.6.1",
         "org.antlr:ST4:4.0.7",
     ],
-    lock_file = "//examples/java/maven_install:mvn_install.json",
+    lock_file = "//examples/java/maven_install:poppy_mvn_install.json",
     repositories = [
         "https://repo1.maven.org/maven2",
     ],
@@ -45,7 +45,7 @@ maven.install(
 )
 
 maven.amend_artifact(
-    name = "mvn",
+    name = "poppy_mvn",
     coordinates = "com.google.guava:guava",
     exclusions = [
         "*:*",
@@ -53,21 +53,21 @@ maven.amend_artifact(
 )
 
 maven.amend_artifact(
-    name = "mvn",
+    name = "poppy_mvn",
     coordinates = "org.antlr:ST4",
     exclusions = [
         "antlr:antlr",
     ],
 )
 
-# regen lock file: REPIN=1 bazel run @antlr//:pin
+# regen lock file: REPIN=1 bazel run @poppy_antlr//:pin
 maven.install(
-    name = "antlr",
+    name = "poppy_antlr",
     artifacts = [
         "org.antlr:ST4:4.0.7",
         "antlr:antlr:2.7.6",
     ],
-    lock_file = "//examples/java/maven_install:antlr_install.json",
+    lock_file = "//examples/java/maven_install:poppy_antlr_install.json",
     repositories = [
         "https://repo1.maven.org/maven2",
     ],
@@ -76,4 +76,4 @@ maven.install(
     version_conflict_policy = "pinned",
 )
 
-use_repo(maven, "mvn", "antlr")
+use_repo(maven, "poppy_mvn", "poppy_antlr")
