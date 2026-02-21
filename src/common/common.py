@@ -39,5 +39,6 @@ def write_file(path, content):
 
 
 def _has_workspace_file(repo_root):
-    return os.path.exists(os.path.join(repo_root, "WORKSPACE"))
+    return (os.path.exists(os.path.join(repo_root, "WORKSPACE")) or
+            os.path.exists(os.path.join(repo_root, "MODULE.bazel")))
 
