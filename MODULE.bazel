@@ -1,3 +1,8 @@
+module(
+    name = "pomgen",
+    repo_name = "poppy",
+)
+
 bazel_dep(name = "aspect_rules_py", version = "1.2.1")
 bazel_dep(name = "rules_python", version = "0.29.0")
 bazel_dep(name = "rules_java", version = "7.12.5")

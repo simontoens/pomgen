@@ -470,7 +470,7 @@
     "@@rules_python~//python/extensions:pip.bzl%pip": {
       "general": {
         "bzlTransitiveDigest": "+G31e61l2SnSafxfsbNHHw/vmt/8r3yskjTfs9VuZ4Q=",
-        "usagesDigest": "gqOU88/75DTvBOaONO2g45VG6dVxAMAb6ot4fMbs6Dk=",
+        "usagesDigest": "t3BqkRcBKsrRVFsD17W1Qwyh5eY7Vcp4BtI1c/chSQo=",
         "recordedFileInputs": {
           "@@rules_python~//tools/publish/requirements_linux.txt": "8175b4c8df50ae2f22d1706961884beeb54e7da27bd2447018314a175981997d",
           "@@//examples/python/pip/requirements_lock.txt": "7d81839e7eb37e862005cf1bb386c875144dcceedbf4d4556b02b205b144dde0",
